@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>🧠 投资认知网络 · 按模块着色·按主干定大小</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0b1424;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      padding: 16px;
+    }
+    .graph-container {
+      width: 100%;
+      max-width: 1400px;
+      background: radial-gradient(circle at 30% 40%, #121e33, #080f1c);
+      border-radius: 48px;
+      padding: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.03);
+      position: relative;
+    }
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      min-height: 820px;
+      background: transparent;
+      border-radius: 32px;
+      cursor: grab;
+    }
+    svg:active { cursor: grabbing; }
+    .node circle { stroke-width: 1.8px; }
+    .node text {
+      fill: #e8edf5;
+      font-size: 8px;
+      font-weight: 500;
+      text-shadow: 0 0 8px #0a1424, 0 0 2px #0a1424;
+      dominant-baseline: middle;
+      text-anchor: middle;
+      pointer-events: none;
+      letter-spacing: 0.2px;
+    }
+    .link { stroke-opacity: 0.5; stroke-linecap: round; }
+    .link.cross { stroke-dasharray: 5 4; stroke-opacity: 0.8; }
+    .legend {
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 12px 24px; margin-top: 18px; padding: 10px 20px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 60px; border: 1px solid rgba(255,255,255,0.04);
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; color: #9bb0d0; font-size: 0.7rem; }
+    .legend-item .dot { width: 14px; height: 4px; border-radius: 4px; border: none; }
+    .legend-item .dot.dashed { width: 16px; height: 0; border-top: 3px dashed #f472b6; background: transparent; }
+    .legend-item .circle-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); }
+    .footnote { margin-top: 14px; color: #5a7298; font-size: 0.7rem; letter-spacing: 1px; text-align: center; opacity: 0.6; }
+    @media (max-width: 700px) {
+      .graph-container { padding: 8px; border-radius: 28px; }
+      svg { min-height: 600px; }
+      .node text { font-size: 6px; }
+    }
+    .tooltip {
+      position: absolute; z-index: 100;
+      background: rgba(10,18,30,0.94); backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+      padding: 12px 16px; max-width: 220px; pointer-events: none;
+      opacity: 0; transition: opacity 0.2s;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .tooltip.show { opacity: 1; }
+    .tooltip .name { font-size: 0.85rem; font-weight: 600; color: #f0f4fe; margin-bottom: 2px; }
+    .tooltip .group { font-size: 0.6rem; color: #4a6080; letter-spacing: 1px; margin-bottom: 6px; }
+    .tooltip .desc { font-size: 0.7rem; line-height: 1.5; color: #b0c8e8; }
+    .tooltip .cross-badge { display: inline-block; margin-top: 6px; background: rgba(244,114,182,0.15); color: #f472b6; padding: 2px 10px; border-radius: 20px; font-size: 0.6rem; border: 1px solid rgba(244,114,182,0.2); }
+  </style>
+</head>
+<body>
+<div class="graph-container" style="position:relative">
+  <div class="tooltip" id="tooltip">
+    <div class="name" id="tipName"></div>
+    <div class="group" id="tipGroup"></div>
+    <div class="desc" id="tipDesc"></div>
+    <div class="cross-badge" id="tipCross" style="display:none;">🔗 交叉验证节点</div>
+  </div>
+  <svg id="neuralGraph" viewBox="0 0 1000 820" preserveAspectRatio="xMidYMid meet"></svg>
+</div>
+<div class="legend">
+  <span class="legend-item"><span class="circle-dot" style="background:#f7b731;"></span> 核心</span>
+  <span class="legend-item"><span class="circle-dot" style="background:#4fc3f7;"></span> 医疗行业</span>
+  <span class="legend-item"><span class="circle-dot" style="background:#a78bfa;"></span> AI行业</span>
+  <span class="legend-item"><span class="circle-dot" style="background:#f472b6;"></span> 消费</span>
+  <span class="legend-item"><span class="circle-dot" style="background:#34d399;"></span> 已买入</span>
+  <span class="legend-item"><span class="circle-dot" style="background:#fbbf24;"></span> 待买入</span>
+  <span class="legend-item"><span class="dot dashed"></span> 交叉验证关系</span>
+</div>
+<div class="footnote">节点大小表示主干程度 · 颜色区分模块 · 虚线为交叉验证 · 点击查看详情</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+(function() {
+  // ======  ⬇ 在这里增删改节点  ⬇  ======
+  const nodes = [
+    // 核心 (橙色)
+    { id: "core", label: "认知变现", group: "core", size: 30, desc: "投资=多角度分析的变现。体感+数据=决策。" },
+    { id: "multi", label: "多角度分析", group: "core", size: 24, desc: "医疗一线 + AI开发 + 宏观历史 + 人性洞察 + 单兵体感" },
+    { id: "wait", label: "等回调·闲钱", group: "core", size: 22, desc: "标普500回撤10-15%启动，不追高，不加杠杆。" },
+    { id: "hold", label: "3年持有·止盈", group: "core", size: 22, desc: "过滤短期噪音，止盈线15-20%。" },
+
+    // 医疗行业 (天蓝)
+    { id: "med_feel", label: "医疗一线体感", group: "medical", size: 20, desc: "你在行业内的真实观察：政策落地阻力、DRG/DIP执行僵持。" },
+    { id: "med_policy", label: "政策落地阻力", group: "medical", size: 18, desc: "文件到科室执行之间的博弈和妥协。" },
+    { id: "med_insurance", label: "医保支付方", group: "medical", size: 16, desc: "医保控费压力传导至医院端。" },
+    { id: "med_hospital", label: "医院端", group: "medical", size: 16, desc: "成本核算压力，科室绩效受影响。" },
+    { id: "med_pharma", label: "药企端", group: "medical", size: 16, desc: "集采压低利润，创新转型迫切。" },
+    { id: "med_export", label: "创新药出海", group: "medical", size: 16, desc: "License-out 交易放量，全球化验证。" },
+    { id: "med_japan", label: "日本医药路径", group: "medical", size: 16, desc: "控费阵痛后创新驱动，出海找增量。" },
+    { id: "med_korea", label: "韩国医药路径", group: "medical", size: 16, desc: "CDMO代工+技术授权模式。" },
+    { id: "med_suspend", label: "医药暂缓", group: "medical", size: 22, desc: "交叉验证：医疗一线+政策阻力+日韩路径 → 暂缓，等待更明确信号。" },
+    { id: "med_policy_impact", label: "集采冲击边际钝化", group: "medical", size: 16, desc: "集采常态化，市场反应逐渐麻木。" },
+    { id: "med_conflict", label: "医患矛盾→改革阵痛", group: "medical", size: 16, desc: "深层矛盾需时间化解，短期扰动情绪。" },
+
+    // AI行业 (紫色)
+    { id: "ai_dev_feel", label: "AI开发者体感", group: "ai", size: 20, desc: "调用API、做情感陪伴产品的一线经验。" },
+    { id: "ai_api_cost", label: "API性价比实测", group: "ai", size: 18, desc: "DeepSeek便宜，Claude/GPT贵但强，按需调度。" },
+    { id: "ai_github", label: "GitHub生态深度使用", group: "ai", size: 18, desc: "开发者粘性极强，生态锁定效应。" },
+    { id: "ai_model", label: "模型层 (DeepSeek/Claude/GPT)", group: "ai", size: 20, desc: "上游核心，按token收费，规模效应。" },
+    { id: "ai_compute", label: "算力层 (英伟达/芯片)", group: "ai", size: 18, desc: "AI越普及，算力需求越刚性。" },
+    { id: "ai_api_volume", label: "API调用量→景气指标", group: "ai", size: 16, desc: "真实需求的风向标。" },
+    { id: "ai_toolchain", label: "工具链 (Dify/n8n/Coze)", group: "ai", size: 18, desc: "降低开发门槛，聚合开发者。" },
+    { id: "ai_platform", label: "开发者平台 (阿里Qoder/猫箱)", group: "ai", size: 18, desc: "国内中游重要玩家，生态扩张。" },
+    { id: "ai_github_lock", label: "GitHub生态锁定", group: "ai", size: 18, desc: "代码托管+CI/CD+Copilot，不可替代。" },
+    { id: "ai_app", label: "情感陪伴应用", group: "ai", size: 18, desc: "下游典型场景，用户付费意愿强。" },
+    { id: "ai_homogeneous", label: "同质化严重", group: "ai", size: 16, desc: "99%产品换皮，缺乏差异化。" },
+    { id: "ai_user_alert", label: "用户警惕圈钱", group: "ai", size: 16, desc: "用户已具备辨别能力，付费转化下降。" },
+    { id: "ai_mid_看好", label: "中游看好", group: "ai", size: 22, desc: "交叉验证：开发者体感+GitHub生态+工具链 → 中游最有护城河。" },
+    { id: "ai_up_收租", label: "上游收租", group: "ai", size: 22, desc: "交叉验证：API性价比+算力刚需+调用量增长 → 上游确定性最强。" },
+    { id: "ai_down_不看好", label: "下游不看好", group: "ai", size: 22, desc: "交叉验证：同质化+用户警惕+红海竞争 → 下游难出龙头。" },
+    { id: "ai_regulation", label: "新规反向印证潜力", group: "ai", size: 18, desc: "监管越严，说明赛道越热，需求管不住。" },
+
+    // 消费 (粉色)
+    { id: "consume_必选", label: "消费必选 (国家战略)", group: "consume", size: 20, desc: "出口+地产见顶，消费是唯一主引擎。" },
+    { id: "consume_timing", label: "时机不明", group: "consume", size: 16, desc: "需等待社零、CPI、就业信号。" },
+    { id: "consume_sub", label: "服务/AI消费细分", group: "consume", size: 16, desc: "情绪消费、AI陪伴、服务体验是新方向。" },
+
+    // 已买入 (翠绿)
+    { id: "bought_hs300", label: "沪深300 (已买入)", group: "bought", size: 18, desc: "A股核心底仓，每周20元。" },
+    { id: "bought_bond", label: "中债 (已买入)", group: "bought", size: 16, desc: "压舱石，每周15元。" },
+    { id: "bought_sp500", label: "标普500 (已买入)", group: "bought", size: 18, desc: "海外分散，每周10元。" },
+    { id: "bought_med_etf", label: "医疗ETF (已买入)", group: "bought", size: 16, desc: "小剂量播种，每周5元。" },
+    { id: "bought_money_fund", label: "货币基金 (备用金)", group: "bought", size: 14, desc: "等待大跌时手动加仓。" },
+
+    // 待买入 (金色)
+    { id: "watch_nasdaq", label: "纳斯达克100 (待回调)", group: "watch", size: 16, desc: "等回调15-20%介入。" },
+    { id: "watch_ali_tencent", label: "阿里云/腾讯 (观察)", group: "watch", size: 16, desc: "国内中游平台，关注生态扩张。" },
+    { id: "watch_msft", label: "微软 (GitHub母公司)", group: "watch", size: 16, desc: "GitHub+Azure+AI，生态龙头。" },
+    { id: "watch_consume_etf", label: "消费类ETF (待信号)", group: "watch", size: 14, desc: "等社零数据确认复苏。" },
+    { id: "watch_deepseek", label: "DeepSeek (等IPO)", group: "watch", size: 16, desc: "性价比屠夫，关注上市进程。" },
+  ];
+
+  // ======  ⬇ 在这里增删改连线  ⬇  ======
+  const links = [
+    // 核心 → 理念
+    { source: "core", target: "multi", value: 2, type: "causal" },
+    { source: "core", target: "wait", value: 2, type: "causal" },
+    { source: "core", target: "hold", value: 2, type: "causal" },
+    // 多角度 → 各行业
+    { source: "multi", target: "med_feel", value: 1.5, type: "cross" },
+    { source: "multi", target: "ai_dev_feel", value: 1.5, type: "cross" },
+    { source: "multi", target: "consume_必选", value: 1.5, type: "cross" },
+    // 医疗内部
+    { source: "med_feel", target: "med_policy", value: 1.8, type: "causal" },
+    { source: "med_policy", target: "med_insurance", value: 1.5, type: "causal" },
+    { source: "med_insurance", target: "med_hospital", value: 1.5, type: "causal" },
+    { source: "med_hospital", target: "med_pharma", value: 1.5, type: "causal" },
+    { source: "med_pharma", target: "med_export", value: 1.5, type: "causal" },
+    { source: "med_export", target: "med_japan", value: 1.2, type: "causal" },
+    { source: "med_export", target: "med_korea", value: 1.2, type: "causal" },
+    // 医药暂缓（交叉验证）
+    { source: "med_feel", target: "med_suspend", value: 2, type: "cross" },
+    { source: "med_policy", target: "med_suspend", value: 2, type: "cross" },
+    { source: "med_japan", target: "med_suspend", value: 1.8, type: "cross" },
+    { source: "med_korea", target: "med_suspend", value: 1.8, type: "cross" },
+    { source: "med_policy_impact", target: "med_suspend", value: 1.5, type: "cross" },
+    { source: "med_conflict", target: "med_suspend", value: 1.5, type: "cross" },
+    // AI内部
+    { source: "ai_dev_feel", target: "ai_api_cost", value: 1.8, type: "causal" },
+    { source: "ai_dev_feel", target: "ai_github", value: 1.8, type: "causal" },
+    { source: "ai_api_cost", target: "ai_model", value: 1.5, type: "causal" },
+    { source: "ai_model", target: "ai_compute", value: 1.5, type: "causal" },
+    { source: "ai_model", target: "ai_api_volume", value: 1.5, type: "causal" },
+    { source: "ai_github", target: "ai_toolchain", value: 1.5, type: "causal" },
+    { source: "ai_toolchain", target: "ai_platform", value: 1.5, type: "causal" },
+    { source: "ai_github", target: "ai_github_lock", value: 1.8, type: "causal" },
+    { source: "ai_dev_feel", target: "ai_app", value: 1.8, type: "causal" },
+    { source: "ai_app", target: "ai_homogeneous", value: 1.5, type: "causal" },
+    { source: "ai_app", target: "ai_user_alert", value: 1.5, type: "causal" },
+    // AI关键判断（交叉验证）
+    { source: "ai_dev_feel", target: "ai_mid_看好", value: 2, type: "cross" },
+    { source: "ai_github", target: "ai_mid_看好", value: 2, type: "cross" },
+    { source: "ai_toolchain", target: "ai_mid_看好", value: 2, type: "cross" },
+    { source: "ai_platform", target: "ai_mid_看好", value: 1.8, type: "cross" },
+    { source: "ai_model", target: "ai_up_收租", value: 2, type: "cross" },
+    { source: "ai_compute", target: "ai_up_收租", value: 2, type: "cross" },
+    { source: "ai_api_volume", target: "ai_up_收租", value: 2, type: "cross" },
+    { source: "ai_api_cost", target: "ai_up_收租", value: 1.8, type: "cross" },
+    { source: "ai_app", target: "ai_down_不看好", value: 2, type: "cross" },
+    { source: "ai_homogeneous", target: "ai_down_不看好", value: 2, type: "cross" },
+    { source: "ai_user_alert", target: "ai_down_不看好", value: 2, type: "cross" },
+    // 消费
+    { source: "consume_必选", target: "consume_timing", value: 1.8, type: "causal" },
+    { source: "consume_必选", target: "consume_sub", value: 1.5, type: "causal" },
+    // 行业判断 → 标的
+    { source: "med_suspend", target: "bought_med_etf", value: 1.8, type: "causal" },
+    { source: "med_feel", target: "bought_med_etf", value: 1.5, type: "causal" },
+    { source: "ai_up_收租", target: "watch_msft", value: 1.8, type: "causal" },
+    { source: "ai_up_收租", target: "watch_nasdaq", value: 1.8, type: "causal" },
+    { source: "ai_mid_看好", target: "watch_ali_tencent", value: 1.8, type: "causal" },
+    { source: "ai_model", target: "watch_deepseek", value: 1.5, type: "causal" },
+    { source: "consume_必选", target: "watch_consume_etf", value: 1.5, type: "causal" },
+    { source: "consume_timing", target: "watch_consume_etf", value: 1.5, type: "causal" },
+    // 核心策略 → 已买入
+    { source: "wait", target: "bought_hs300", value: 1.8, type: "causal" },
+    { source: "wait", target: "bought_sp500", value: 1.8, type: "causal" },
+    { source: "hold", target: "bought_bond", value: 1.5, type: "causal" },
+    { source: "hold", target: "bought_money_fund", value: 1.5, type: "causal" },
+    // 多角度交叉验证关键判断
+    { source: "multi", target: "med_suspend", value: 1.5, type: "cross" },
+    { source: "multi", target: "ai_mid_看好", value: 1.5, type: "cross" },
+    { source: "multi", target: "ai_up_收租", value: 1.5, type: "cross" },
+    { source: "multi", target: "ai_down_不看好", value: 1.5, type: "cross" },
+    { source: "multi", target: "consume_必选", value: 1.5, type: "cross" },
+  ];
+
+  // ======  ⬆  以上是数据区，以下是渲染代码  ⬆  ======
+  const colorMap = {
+    core: "#f7b731", medical: "#4fc3f7", ai: "#a78bfa",
+    consume: "#f472b6", bought: "#34d399", watch: "#fbbf24"
+  };
+  const typeColor = { causal: "#8aa3d0", cross: "#f472b6", same: "#5a7a9a", time: "#6b8f6b" };
+  const groupNames = { core:"核心", medical:"医疗行业", ai:"AI行业", consume:"消费", bought:"已买入", watch:"待买入" };
+
+  const nodeInfo = {};
+  nodes.forEach(n => {
+    nodeInfo[n.id] = {
+      label: n.label, group: groupNames[n.group] || "",
+      desc: n.desc || "",
+      cross: links.filter(l => (l.source === n.id || l.target === n.id) && l.type === "cross").length > 0
+    };
+  });
+
+  const svg = d3.select("#neuralGraph");
+  const width = 1000, height = 820;
+  const defs = svg.append("defs");
+
+  const glow = defs.append("filter").attr("id","glow").attr("x","-60%").attr("y","-60%").attr("width","220%").attr("height","220%");
+  glow.append("feGaussianBlur").attr("stdDeviation","4").attr("result","blur");
+  glow.append("feMerge").selectAll("feMergeNode").data(["blur","SourceGraphic"]).enter().append("feMergeNode").attr("in",d=>d);
+  const coreGlow = defs.append("filter").attr("id","coreGlow").attr("x","-80%").attr("y","-80%").attr("width","260%").attr("height","260%");
+  coreGlow.append("feGaussianBlur").attr("stdDeviation","7").attr("result","blur");
+  coreGlow.append("feMerge").selectAll("feMergeNode").data(["blur","SourceGraphic"]).enter().append("feMergeNode").attr("in",d=>d);
+
+  Object.keys(colorMap).forEach(key => {
+    const c = colorMap[key];
+    const g = defs.append("radialGradient").attr("id","g_"+key).attr("cx","30%").attr("cy","30%");
+    g.append("stop").attr("offset","0%").attr("stop-color",d3.color(c).brighter(0.5));
+    g.append("stop").attr("offset","60%").attr("stop-color",c);
+    g.append("stop").attr("offset","100%").attr("stop-color",d3.color(c).darker(0.7));
+  });
+  const coreGrad = defs.append("radialGradient").attr("id","coreG").attr("cx","30%").attr("cy","30%");
+  coreGrad.append("stop").attr("offset","0%").attr("stop-color","#fce38a");
+  coreGrad.append("stop").attr("offset","50%").attr("stop-color","#f7b731");
+  coreGrad.append("stop").attr("offset","100%").attr("stop-color","#c08810");
+
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d=>d.id)
+      .distance(d=>d.type==="cross"?140:d.value>1.8?100:d.value>1.2?130:170).strength(0.45))
+    .force("charge", d3.forceManyBody().strength(-550).distanceMin(40).distanceMax(350))
+    .force("center", d3.forceCenter(width/2, height/2))
+    .force("collide", d3.forceCollide().radius(d=>(d.size||16)*1.5).iterations(3))
+    .alphaDecay(0.025);
+
+  const link = svg.append("g").selectAll("line").data(links).enter().append("line")
+    .attr("class", d=>"link "+(d.type==="cross"?"cross":""))
+    .attr("stroke", d=>typeColor[d.type]||"#8aa3d0")
+    .attr("stroke-width", d=>d.type==="cross"?1.8:0.6+d.value*0.4)
+    .attr("opacity", d=>d.type==="cross"?0.85:0.45);
+
+  const rayG = svg.append("g");
+  const rays = rayG.selectAll("g.rays").data(nodes).enter().append("g");
+  rays.append("line").attr("x1",d=>-d.size*2.2).attr("x2",d=>d.size*2.2).attr("y1",0).attr("y2",0)
+    .attr("stroke",d=>colorMap[d.group]).attr("stroke-width",0.5).attr("opacity",0.08);
+  rays.append("line").attr("x1",0).attr("x2",0).attr("y1",d=>-d.size*2.2).attr("y2",d=>d.size*2.2)
+    .attr("stroke",d=>colorMap[d.group]).attr("stroke-width",0.5).attr("opacity",0.08);
+
+  const node = svg.append("g").selectAll(".node").data(nodes).enter().append("g").attr("class","node")
+    .call(d3.drag()
+      .on("start",(e,d)=>{if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;})
+      .on("end",(e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;}));
+
+  node.append("circle")
+    .attr("r", d=>d.size||16)
+    .attr("fill", d=>d.id==="core"?"url(#coreG)":"url(#g_"+d.group+")")
+    .attr("stroke", d=>d3.color(colorMap[d.group]).brighter(0.3).toString())
+    .attr("stroke-width", d=>d.id==="core"?2.5:1.8)
+    .attr("filter", d=>d.id==="core"?"url(#coreGlow)":"url(#glow)")
+    .style("cursor","pointer");
+
+  node.each(function(d){
+    const c=d3.select(this).select("circle"),delay=Math.random()*2000;
+    (function tw(){
+      c.transition().delay(delay).duration(700).attr("opacity",0.6)
+       .transition().duration(700).attr("opacity",1).on("end",tw);
+    })();
+  });
+  (function pl(){
+    node.filter(d=>d.id==="core").select("circle")
+      .transition().duration(1500).attr("r",32)
+      .transition().duration(1500).attr("r",30).on("end",pl);
+  })();
+
+  node.each(function(d){
+    const g=d3.select(this),label=d.label||"";
+    const lines=label.split('·');
+    if(lines.length>1&&label.includes('·')){
+      g.append("text").attr("y",-4).style("font-size","8px").style("font-weight","600")
+        .style("fill","#f0f4fe").style("text-anchor","middle").style("text-shadow","0 0 12px #0a1424").text(lines[0]);
+      g.append("text").attr("y",8).style("font-size","6px").style("font-weight","400")
+        .style("fill","#b0c8e8").style("text-anchor","middle").style("text-shadow","0 0 8px #0a1424").text(lines[1]||"");
+    } else {
+      const fs=(d.size&&d.size>22)?"10px":(d.size&&d.size>18?"8px":"7px");
+      g.append("text").attr("y",2).style("font-size",fs)
+        .style("font-weight",(d.size&&d.size>22)?"600":"500")
+        .style("fill","#e8edf5").style("text-anchor","middle")
+        .style("text-shadow","0 0 14px #0a1424, 0 0 4px #0a1424").text(label);
+    }
+  });
+
+  const tip=document.getElementById("tooltip"),tipName=document.getElementById("tipName"),
+        tipGroup=document.getElementById("tipGroup"),tipDesc=document.getElementById("tipDesc"),
+        tipCross=document.getElementById("tipCross");
+  node.on("click",function(e,d){
+    const info=nodeInfo[d.id];if(!info)return;
+    tipName.textContent=info.label;tipGroup.textContent=info.group;tipDesc.textContent=info.desc;
+    if(info.cross){tipCross.style.display="inline-block";
+      const cc=links.filter(l=>(l.source===d.id||l.target===d.id)&&l.type==="cross").length;
+      tipCross.textContent="🔗 "+cc+" 条交叉验证";
+    }else tipCross.style.display="none";
+    const rect=this.getBoundingClientRect(),c=document.querySelector('.graph-container').getBoundingClientRect();
+    let left=rect.left-c.left+rect.width/2,top=rect.top-c.top-10;
+    if(top<60)top=rect.bottom-c.top+10;
+    tip.style.left=Math.max(10,Math.min(left-90,c.width-200))+"px";
+    tip.style.top=top+"px";tip.classList.add("show");e.stopPropagation();
+  });
+  document.addEventListener("click",function(e){if(!e.target.closest('.node'))tip.classList.remove("show");});
+
+  simulation.on("tick",()=>{
+    link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+    node.attr("transform",d=>`translate(${d.x},${d.y})`);
+    rays.attr("transform",d=>`translate(${d.x},${d.y})`);
+  });
+
+  function resize(){
+    const c=document.querySelector('.graph-container').getBoundingClientRect();
+    const w=Math.min(c.width-32,1400),ratio=w/1000,nh=Math.max(600,820*ratio);
+    svg.attr("viewBox",`0 0 1000 ${nh}`);
+    simulation.force("center",d3.forceCenter(500,nh/2));simulation.alpha(0.3).restart();
+  }
+  window.addEventListener('resize',resize);setTimeout(resize,100);
+})();
+</script>
+</body>
+</html>
